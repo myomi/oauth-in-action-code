@@ -8,12 +8,13 @@ import * as randomstring from "randomstring";
 import { AddressInfo } from "net";
 var __ = require("underscore");
 __.string = require("underscore.string");
+import { AuthorizeRequest, ResponseType } from "./types";
 
 const app = express();
 const db = nosql.load("database.nosql");
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true })); // support form-encoded bodies (for the token endpoint)
+app.use(express.json());
+app.use(express.urlencoded({extended: true}));  // support form-encoded bodies (for the token endpoint)
 
 app.engine("html", consolidate.underscore);
 app.set("view engine", "html");
@@ -26,8 +27,15 @@ const authServer = {
   tokenEndpoint: "http://localhost:9001/token"
 };
 
+interface Client {
+  client_id: string;
+  client_secret: string;
+  redirect_uris: string[];
+  scope: string;
+}
+
 // client information
-const clients = [
+const clients: Client[] = [
   {
     client_id: "oauth-client-1",
     client_secret: "oauth-client-secret-1",
@@ -38,26 +46,34 @@ const clients = [
 
 var codes = {};
 
-var requests = {};
+var requests: { [key: string]: AuthorizeRequest } = {};
 
-var getClient = function(clientId) {
-  return __.find(clients, function(client) {
-    return client.client_id == clientId;
-  });
-};
+function getClient(clientId: string): Client {
+  return clients.find(c => c.client_id === clientId);
+}
 
-app.get("/", function(req, res) {
+/**
+ * ホームページ
+ */
+app.get("/", (req, res) => {
   res.render("index", { clients: clients, authServer: authServer });
 });
 
-app.get("/authorize", function(req, res) {
+/**
+ * 認可コードの発行要求
+ */
+app.get("/authorize", (req, res) => {
   var client = getClient(req.query.client_id);
 
   if (!client) {
+    // 未登録のクライアントからのアクセス
     console.log("Unknown client %s", req.query.client_id);
     res.render("error", { error: "Unknown client" });
     return;
-  } else if (!__.contains(client.redirect_uris, req.query.redirect_uri)) {
+  }
+
+  if (client.redirect_uris.findIndex(r => r === req.query.redirect_uri) < 0) {
+    // 未登録のリダイレクト先が指定された
     console.log(
       "Mismatched redirect URI, expected %s got %s",
       client.redirect_uris,
@@ -65,28 +81,32 @@ app.get("/authorize", function(req, res) {
     );
     res.render("error", { error: "Invalid redirect URI" });
     return;
-  } else {
-    var rscope = req.query.scope ? req.query.scope.split(" ") : undefined;
-    var cscope = client.scope ? client.scope.split(" ") : undefined;
-    if (__.difference(rscope, cscope).length > 0) {
-      // client asked for a scope it couldn't have
-      var urlParsed = url.parse(req.query.redirect_uri);
-      delete urlParsed.search; // this is a weird behavior of the URL library
-      urlParsed.query = urlParsed.query || {};
-      urlParsed.query.error = "invalid_scope";
-      res.redirect(url.format(urlParsed));
-      return;
-    }
+  }
 
-    var reqid = randomstring.generate(8);
-
-    requests[reqid] = req.query;
-
-    res.render("approve", { client: client, reqid: reqid, scope: rscope });
+  const rscope = req.query.scope ? req.query.scope.split(" ") : undefined;
+  const cscope = client.scope ? client.scope.split(" ") : undefined;
+  if (__.difference(rscope, cscope).length > 0) {
+    // クライアントが要求したスコープが存在しない
+    const urlParsed = url.parse(req.query.redirect_uri);
+    delete urlParsed.search; // this is a weird behavior of the URL library
+    urlParsed.query = urlParsed.query || {};
+    urlParsed.query.error = "invalid_scope";
+    res.redirect(url.format(urlParsed));
     return;
   }
+
+  // 要求されたリクエストを保存し、approve時に使用する
+  const reqid = randomstring.generate(8);
+  requests[reqid] = req.query;
+
+  // リソースオーナーに確認画面を表示する
+  res.render("approve", { client: client, reqid: reqid, scope: rscope });
+  return;
 });
 
+/**
+ * クライアントを認可 or 否認
+ */
 app.post("/approve", function(req, res) {
   var reqid = req.body.reqid;
   var query = requests[reqid];
@@ -101,7 +121,7 @@ app.post("/approve", function(req, res) {
   if (req.body.approve) {
     if (query.response_type == "code") {
       // user approved access
-      var code = randomstring.generate(8);
+      const code = randomstring.generate(8); // 認可コード
 
       var user = req.body.user;
 
@@ -159,7 +179,7 @@ app.post("/approve", function(req, res) {
 app.post("/token", function(req, res) {
   var auth = req.headers["authorization"];
   if (auth) {
-	// check the auth header
+    // check the auth header
     var clientCredentials = Buffer.from(auth.slice("basic ".length), "base64")
       .toString()
       .split(":");

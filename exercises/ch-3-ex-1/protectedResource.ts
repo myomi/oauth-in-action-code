@@ -2,13 +2,13 @@ import * as express from "express";
 import { Request, Response, NextFunction } from "express";
 import * as consolidate from "consolidate";
 import { AddressInfo } from "net";
-var bodyParser = require("body-parser");
 import * as nosql from "nosql";
-var cors = require("cors");
+import * as cors from "cors";
 
 const app = express();
+const db = nosql.load("database.nosql");
 
-app.use(bodyParser.urlencoded({ extended: true })); // support form-encoded bodies (for bearer tokens)
+app.use(express.urlencoded({extended: true}));  // support form-encoded bodies (for bearer tokens)
 
 app.engine("html", consolidate.underscore);
 app.set("view engine", "html");
@@ -37,7 +37,6 @@ var getAccessToken = function(req: Request, res: Response, next: NextFunction) {
   }
 
   console.log("Incoming token: %s", inToken);
-  const db = nosql.load("database.nosql");
   db.find().make(filter => {
     filter.where("access_token", inToken);
     filter.callback((err, response) => {
@@ -53,7 +52,7 @@ var getAccessToken = function(req: Request, res: Response, next: NextFunction) {
 };
 
 app.options("/resource", cors());
-app.post("/resource", cors(), getAccessToken, function(req, res) {
+app.post("/resource", cors(), getAccessToken, (req, res) => {
   if ((req as any).access_token) {
     res.json(resource);
   } else {
@@ -61,7 +60,7 @@ app.post("/resource", cors(), getAccessToken, function(req, res) {
   }
 });
 
-var server = app.listen(9002, "localhost", function() {
+const server = app.listen(9002, "localhost", () => {
   const address = server.address() as AddressInfo;
   console.log(
     `OAuth Resource Server is listening at http://${address.address}:${

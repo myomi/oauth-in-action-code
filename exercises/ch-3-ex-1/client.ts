@@ -5,6 +5,7 @@ import * as request from "request";
 import * as url from "url";
 import * as querystring from "querystring";
 import * as randomstring from "randomstring";
+import { AuthorizeRequest, ResponseType } from "./types";
 
 const app = express();
 
@@ -34,17 +35,6 @@ interface Session {
   scope: string;
 }
 
-interface AuthorizeRequest {
-  response_type: ResponseType;
-  client_id: string;
-  redirect_uri: string;
-  state: string;
-}
-
-enum ResponseType {
-  code = "code" // コード認可
-}
-
 enum GrantType {
   authorizationCode = "authorization_code" // 認可コード
 }
@@ -59,6 +49,8 @@ let session: Session = {
  * ホームページ
  */
 app.get("/", (req, res) => {
+  console.log('hello#################################');
+  console.log(session);
   res.render("index", session);
 });
 
@@ -76,7 +68,7 @@ app.get("/authorize", (req, res) => {
     response_type: ResponseType.code,
     client_id: client.client_id,
     redirect_uri: client.redirect_uris[0],
-    state: session.state
+	state: session.state
   });
   console.log("redirect to", authorizeUrl);
   res.redirect(authorizeUrl);
@@ -163,8 +155,6 @@ app.get("/fetch_resource", async (req, res) => {
     res.render("error", { error });
   }
 });
-
-
 
 const server = app.listen(9000, "localhost", () => {
   const address = server.address() as AddressInfo;
